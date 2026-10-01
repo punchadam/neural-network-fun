@@ -2,6 +2,7 @@
 
 #include "linearAlgebra.h"
 #include <random>
+#include <memory>
 
 // idk if this is the right way to do this i'm
 // just trying to get started lol
@@ -11,9 +12,7 @@ struct ReLU_Activation {
     static inline T activate(T x) {
         return x > static_cast<T>(0) ? x : static_cast<T>(0);
     }
-    
     // derivative is 0 when x < 0 and 1 when x > 0 bc derivative of x is 1
-
     template <typename T>
     static inline T derivative_from_z(T z) {
         return z > static_cast<T>(0) ? static_cast<T>(1) : static_cast<T>(0);
@@ -25,7 +24,6 @@ struct Sigmoid_Activation {
     static inline T activate(float x) {
         return static_cast<T>(1) / (static_cast<T>(1) + static_cast<T>(std::exp(-x)));
     }
-    
     // uses output z if sig = z
     template <typename T>
     static inline T derivative_from_z(T z) {
@@ -56,10 +54,10 @@ struct MeanSquaredLoss {
 
 // for classification output
 struct SoftmaxCCELoss {
-    // applies softmax, then calculates the categorical cross-entropy
+
     template <typename T>
-    static inline T calculateLoss(const Vector<T>& predicted, const Vector<T>& target) {
-        Vector<T> softmaxOutput = predicted;
+    static inline Vector<T> applySoftmaxFunction(const Vector<T>& input) {
+        Vector<T> softmaxOutput = input;
         T max = std::numeric_limits<T>::lowest();
         softmaxOutput.apply([&max](T val) { max = std::max(val, max); return val; });   // find maximum logit value
         softmaxOutput.apply([&max](T val) { return val - max; });   // subtract max from every logit
@@ -68,6 +66,13 @@ struct SoftmaxCCELoss {
         T e_val;   // init here to avoid a bunch of allocations
         softmaxOutput.apply([&sumExp, &e_val](T val) { e_val = std::exp(val); sumExp += e_val; return e_val; });
         softmaxOutput.apply([&sumExp](T val) { return val / sumExp; });   // softmaxOutput is now a finished probability vector
+        return softmaxOutput;
+    }
+
+    // applies softmax, then calculates the categorical cross-entropy
+    template <typename T>
+    static inline T calculateLoss(const Vector<T>& predicted, const Vector<T>& target) {
+        Vector<T> softmaxOutput = applySoftmaxFunction(predicted);
         
         T tinyNumberToAvoidNaNforSmallFloats = static_cast<T>(1e-7);
         T CCELoss = 0;
@@ -81,17 +86,8 @@ struct SoftmaxCCELoss {
     
     template <typename T>
     static inline Vector<T> calculateGradient(const Vector<T>& predicted, const Vector<T>& target) {
+        Vector<T> softmaxOutput = applySoftmaxFunction(predicted);
         
-        // exact same softmaxOutput calculation as above
-        Vector<T> softmaxOutput = predicted;
-        T max = std::numeric_limits<T>::lowest();
-        softmaxOutput.apply([&max](T val) { max = std::max(val, max); return val; });
-        softmaxOutput.apply([&max](T val) { return val - max; });
-        T sumExp = static_cast<T>(0);
-        T e_val;
-        softmaxOutput.apply([&sumExp, &e_val](T val) { e_val = std::exp(val); sumExp += e_val; return e_val; });
-        softmaxOutput.apply([&sumExp](T val) { return val / sumExp; });
-
         // derivative simplifies to just probabiliies - target
         softmaxOutput -= target;
         return softmaxOutput;
@@ -103,6 +99,8 @@ template <typename T>
 class Layer {
 public:
     virtual ~Layer() = default;
+
+    virtual void initializeWeights(std::mt19937& gen) = 0;
 
     virtual Vector<T> forwardPass(const Vector<T>& input) = 0;
 
@@ -148,13 +146,13 @@ public:
         return z.apply([](T val) { return Function::activate(val); });
     }
 
-    // backward pass, delta = dL/dz * derivative of activation(z)
-    Vector<T> backwardPass(const Vector<T>& dL_da, T learningRate) {
+    // backward pass, delta = dL/dz * derivative of activation (z)
+    Vector<T> backwardPass(const Vector<T>& dL_dz, T learningRate) {
         // self explanatory, again thank fuck i did all the work in the header
         // i needed that cause NNs are new to me so i wanted this as simple as possible:
 
         delta = z.apply([](T val) { return Function::derivative_from_z(val); });
-        delta.hadamard(dL_da);
+        delta.hadamard(dL_dz);
 
         Vector<T> dL_dx = delta * W;
 
