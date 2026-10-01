@@ -3,7 +3,7 @@
 #include <vector>
 #include <cmath>
 #include <stdexcept>
-#include <limits>
+#include <limits> 
 #include <initializer_list>
 #include <type_traits>
 
@@ -54,7 +54,7 @@ public:
         return result;
     }
 
-    // in-place vector + vector
+    // in-place vector += vector
     Vector<T>& operator+=(const Vector<T>& other) {
         if (this->size() != other.size()) {
             throw std::invalid_argument("Vector sizes must match for addition");
@@ -77,7 +77,7 @@ public:
         return result;
     }
 
-    // in-place vector - vector
+    // in-place vector -= vector
     Vector<T>& operator-=(const Vector<T>& other) {
         if (this->size() != other.size()) {
             throw std::invalid_argument("Vector sizes must match for subtraction");
@@ -109,7 +109,7 @@ public:
         return result;
     }
 
-    // in-place vector * scalar
+    // in-place vector *= scalar
     Vector<T>& operator*=(T scalar) {
         for (size_t i = 0; i < this->size(); i++) {
             (*this)[i] *= scalar;
@@ -231,7 +231,7 @@ public:
         return result;
     }
 
-    // in-place matrix + matrix
+    // in-place matrix += matrix
     Matrix<T>& operator+=(const Matrix<T>& other) {
         if (this->rows() != other.rows() || this->cols() != other.cols()) {
             throw std::invalid_argument("Matrix dimensions must match for addition");
@@ -258,7 +258,7 @@ public:
         return result;
     }
 
-    // in-place matrix - matrix
+    // in-place matrix -= matrix
     Matrix<T>& operator-=(const Matrix<T>& other) {
         if (this->rows() != other.rows() || this->cols() != other.cols()) {
             throw std::invalid_argument("Matrix dimensions must match for subtraction");
@@ -266,6 +266,41 @@ public:
         for (size_t i = 0; i < this->rows(); i++) {
             for (size_t j = 0; j < this->cols(); j++) {
                 (*this)[i, j] -= other[i, j];
+            }
+        }
+        return *this;
+    }
+
+    // matrix + vector (broadcasting adds the vector across every row)
+    Matrix<T> operator+(const Vector<T>& vector) const {
+        if (this->cols() != vector.size()) {
+            throw std::invalid_argument("Matrix columns must equal vector size for broadcasting");
+        }
+        Matrix<T> result(this->rows(), this->cols());
+        for (size_t i = 0; i < this->rows(); i++) {
+            for (size_t j = 0; j < this->cols(); j++) {
+                result[i, j] = (*this)[i, j] + vector[j];
+            }
+        }
+        return result;
+    }
+
+    // vector + matrix
+    friend Matrix<T> operator+(const Vector<T>& vector, const Matrix<T>& matrix) {
+        if (matrix.cols() != vector.size()) {
+            throw std::invalid_argument("Matrix columns must equal vector size for broadcasting");
+        }
+        return matrix + vector;
+    }
+
+    // in-place matrix += vector
+    Matrix<T>& operator+=(const Vector<T>& vector) {
+        if (this->cols() != vector.size()) {
+            throw std::invalid_argument("Matrix columns must equal vector size for broadcasting");
+        }
+        for (size_t i = 0; i < this->rows(); i++) {
+            for (size_t j = 0; j < this->cols(); j++) {
+                (*this)[i, j] += vector[j];
             }
         }
         return *this;
@@ -282,15 +317,19 @@ public:
             for (size_t j = 0; j < result.cols(); j++) {
                 for (size_t k = 0; k < this->cols(); k++) {
                     result[i, j] += (*this)[i, k] * other[k, j];
-                } 
+                }
             }
         }
         return result;
     }
 
-    // in-place matrix * matrix
+    // in-place matrix *= matrix
     Matrix<T>& operator*=(const Matrix<T>& other) {
         *this = *this * other;
+        // this just uses the above method and is the one exception to the memory-efficient in-place ops
+        // it should be noted that there is no way to just compute this literally in-place without
+        // extra mem allocation because parts of the equation are later dependent on values that get
+        // modified during the multiplication, so a temp matrix is inevitable
         return *this;
     }
 
@@ -334,7 +373,7 @@ public:
         return result;
     }
 
-    // in-place matrix * scalar
+    // in-place matrix *= scalar
     Matrix<T>& operator*=(T scalar) {
         for (size_t i = 0; i < this->rows(); i++) {
             for (size_t j = 0; j < this->cols(); j++) {
@@ -409,27 +448,5 @@ public:
         }
         return *this;
     }
-
-    // index-wise function: f(row, col, total_rows, total_cols)
-    template <typename Function>
-    Matrix<T> apply_indexed(Function f) const {
-        Matrix<T> result(this->rows(), this->cols());
-        for (size_t i = 0; i < this->rows(); i++) {
-            for (size_t j = 0; j < this->cols(); j++) {
-                result[i, j] = f(i, j, this->rows(), this->cols());
-            }
-        }
-        return result;
-    }
-
-    // in-place index-wise function: f(row, col, total_rows, total_cols)
-    template <typename Function>
-    Matrix<T>& apply_indexed(Function f) {
-        for (size_t i = 0; i < this->rows(); i++) {
-            for (size_t j = 0; j < this->cols(); j++) {
-                (*this)[i, j] = f(i, j, this->rows(), this->cols());
-            }
-        }
-        return *this;
-    }
+    
 };
