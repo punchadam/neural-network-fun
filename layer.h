@@ -33,8 +33,84 @@ struct Sigmoid_Activation {
     }
 };
 
+// for continuous output
+struct MeanSquaredLoss {
+    // returns a scalar T of the avg squared difference across all elements
+    template <typename T>
+    static inline T calculateLoss(const Vector<T>& predicted, const Vector<T>& target) {
+        Vector<T> diff = predicted - target;
+        diff.apply([](T val) { return val * val; });    // squares each value in place
+        T sum = static_cast<T>(0);
+        diff.apply([&sum](T val) { sum += val; return val; });  // sums all of the squares into sum
+        return sum / static_cast<T>(diff.size());   // 1/N to get Mean Squared Error
+    }
+
+    // returns the initial error vector<T> given a raw target vector
+    template <typename T>
+    static inline Vector<T> calculateGradient(const Vector<T>& predicted, const Vector<T>& target) {
+        Vector<T> diff = predicted - target;
+        diff *= static_cast<T>(2) / static_cast<T>(diff.size());    // dL/dy_predicted = 2/N(y_predicted - y_target)
+        return diff;
+    }
+};
+
+// for classification output
+struct SoftmaxCCELoss {
+    // applies softmax, then calculates the categorical cross-entropy
+    template <typename T>
+    static inline T calculateLoss(const Vector<T>& predicted, const Vector<T>& target) {
+        Vector<T> softmaxOutput = predicted;
+        T max = std::numeric_limits<T>::lowest();
+        softmaxOutput.apply([&max](T val) { max = std::max(val, max); return val; });   // find maximum logit value
+        softmaxOutput.apply([&max](T val) { return val - max; });   // subtract max from every logit
+        
+        T sumExp = static_cast<T>(0);
+        T e_val;   // init here to avoid a bunch of allocations
+        softmaxOutput.apply([&sumExp, &e_val](T val) { e_val = std::exp(val); sumExp += e_val; return e_val; });
+        softmaxOutput.apply([&sumExp](T val) { return val / sumExp; });   // softmaxOutput is now a finished probability vector
+        
+        T tinyNumberToAvoidNaNforSmallFloats = static_cast<T>(1e-7);
+        T CCELoss = 0;
+        for (size_t i = 0; i < softmaxOutput.size(); i++) {
+            CCELoss += target[i] * std::log(softmaxOutput[i] + tinyNumberToAvoidNaNforSmallFloats);
+        }
+        CCELoss *= static_cast<T>(-1);
+
+        return CCELoss;
+    }
+    
+    template <typename T>
+    static inline Vector<T> calculateGradient(const Vector<T>& predicted, const Vector<T>& target) {
+        
+        // exact same softmaxOutput calculation as above
+        Vector<T> softmaxOutput = predicted;
+        T max = std::numeric_limits<T>::lowest();
+        softmaxOutput.apply([&max](T val) { max = std::max(val, max); return val; });
+        softmaxOutput.apply([&max](T val) { return val - max; });
+        T sumExp = static_cast<T>(0);
+        T e_val;
+        softmaxOutput.apply([&sumExp, &e_val](T val) { e_val = std::exp(val); sumExp += e_val; return e_val; });
+        softmaxOutput.apply([&sumExp](T val) { return val / sumExp; });
+
+        // derivative simplifies to just probabiliies - target
+        softmaxOutput -= target;
+        return softmaxOutput;
+    }
+};
+
+// common layer interface my professor would be happy
+template <typename T>
+class Layer {
+public:
+    virtual ~Layer() = default;
+
+    virtual Vector<T> forwardPass(const Vector<T>& input) = 0;
+
+    virtual Vector<T> backwardPass(const Vector<T>& dL_da, T learningRate) = 0;
+};
+
 template <typename T, typename Function> // data type and activation function
-class DenseLayer {
+class DenseLayer : public Layer<T> {
     
     static_assert(std::is_floating_point<T>::value, "Type must be floating-point");
 
@@ -42,11 +118,9 @@ private:
     Matrix<T> W;
     Vector<T> b;
 
-    // store the raw input vector cause backprop needs it #someonepassedCSE205 #encapsulaysh
+    // store the raw input vector and delta buffer cause backprop needs it #someonepassedCSE205 #encapsulaysh
     Vector<T> x;
     Vector<T> z;
-
-    // pre-allocated buffer for backward pass
     Vector<T> delta;
 
     Function ActivationFunction;
@@ -56,6 +130,7 @@ public:
     DenseLayer(size_t inputSize, size_t outputSize)
         : W(outputSize, inputSize), b(outputSize, T{0}), x(inputSize), z(outputSize) {} // biases init to 0 is okay
     
+    // layer doesn't own the mt object so that layers don't come out the same or similar
     void initializeWeights(std::mt19937& gen) {
         // initialize weight values using He distribution
         // std dev = sqrt(2/input size)
