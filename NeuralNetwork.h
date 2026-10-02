@@ -33,13 +33,15 @@ public:
 
     T trainSample(const Vector<T>& input, const Vector<T>& target, T learningRate) {
         Vector<T> prediction = forward(input);
-        LossFunction::calculateLoss(prediction, target);
+        T loss = LossFunction::calculateLoss(prediction, target);
 
         // loop backwards, calculating the gradient and passing to the previous layer
         Vector<T> gradient = LossFunction::calculateGradient(prediction, target);
-        for (size_t i = layers.size() - 1; i-- > 0;) {
-            gradient = layers[i]->backwardPass(gradient, learningRate);
+        for (size_t i = layers.size(); i > 0; --i) {
+            gradient = layers[i - 1]->backwardPass(gradient, learningRate);
         }
+
+        return loss;
     }
 
 };

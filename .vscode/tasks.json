@@ -6,6 +6,8 @@
             "command": "C:\\msys64\\mingw64\\bin\\g++.exe",
             "args": [
                 "-fdiagnostics-color=always",
+                "-O3",
+                "-march=native",
                 "-g",
                 "${file}",
                 "-o",

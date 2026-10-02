@@ -21,7 +21,7 @@ struct ReLU_Activation {
 
 struct Sigmoid_Activation {
     template <typename T>
-    static inline T activate(float x) {
+    static inline T activate(T x) {
         return static_cast<T>(1) / (static_cast<T>(1) + static_cast<T>(std::exp(-x)));
     }
     // uses output z if sig = z
@@ -29,6 +29,14 @@ struct Sigmoid_Activation {
     static inline T derivative_from_z(T z) {
         return z * (static_cast<T>(1) - z);
     }
+};
+
+struct Linear_Activation {
+    template <typename T>
+    static T activate(T val) { return val; }
+
+    template <typename T>
+    static T derivative_from_z(T val) { return T{1}; }
 };
 
 // for continuous output
